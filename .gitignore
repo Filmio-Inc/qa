@@ -69,3 +69,7 @@ Vagrantfile
 
 # dist
 dist
+
+# others
+.jpg
+*.jpg
