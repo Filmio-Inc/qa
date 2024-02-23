@@ -1,0 +1,145 @@
+AWSTemplateFormatVersion: '2010-09-09' # Version of the CloudFormation template standard
+Description: AWS Lambda Load Testing Tool | Filmio # Description of the CloudFormation stack
+
+Parameters:
+  S3REGION:
+    Type: String # The data type for the parameter
+    Description: Region # Description of the parameter
+    Default: us-east-1 # Default value if none is provided
+
+Resources:
+  MasterLambdaExecutionRole:
+    Type: AWS::IAM::Role # AWS resource type
+    Properties:
+      AssumeRolePolicyDocument: # Policy that allows Lambda to assume this role
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: MasterLambdaPolicy # Custom policy name
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow # Allows following actions
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:log-stream:*"
+              - Effect: Allow # Allows invoking lambda functions
+                Action:
+                  - lambda:InvokeFunction
+                  - lambda:InvokeAsync
+                Resource:
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ChildLambdaFunction}'
+
+  ChildLambdaExecutionRole:
+    Type: AWS::IAM::Role # AWS resource type
+    Properties:
+      AssumeRolePolicyDocument: # Policy that allows Lambda to assume this role
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ChildLambdaPolicy # Custom policy name
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow # Allows following actions
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:log-stream:*"
+              - Effect: Allow # Allows actions on S3
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Resource: 
+                  - !Sub "arn:aws:s3:::${LoadTestBucket}/*"
+
+  LoadTestBucket:
+    Type: AWS::S3::Bucket # AWS resource type for S3 bucket
+
+  MasterLambdaFunction:
+    Type: AWS::Lambda::Function # AWS resource type for Lambda function
+    Properties:
+      Handler: master.handler # The function within your code to call
+      Role: !GetAtt MasterLambdaExecutionRole.Arn # The ARN of the IAM role
+      Runtime: nodejs20.x # Runtime environment
+      Code: lambda/code.zip # Location of the Lambda code
+      MemorySize: 128 # Memory allocated to the function
+      Timeout: 300 # Maximum execution time in seconds
+      Environment:
+        Variables:
+          CHILD_LAMBDA: !GetAtt ChildLambdaFunction.Arn # Environment variable
+
+  ChildLambdaFunction:
+    Type: AWS::Lambda::Function # AWS resource type for Lambda function
+    Properties:
+      Handler: child.handler # The function within your code to call
+      Role: !GetAtt ChildLambdaExecutionRole.Arn # The ARN of the IAM role
+      Runtime: nodejs20.x # Runtime environment
+      Code: lambda/code.zip # Location of the Lambda code
+      MemorySize: 1536 # Memory allocated to the function
+      EphemeralStorage:
+        Size: 1024 # Temporary storage
+      Timeout: 300 # Maximum execution time in seconds
+      Environment:
+        Variables:
+          S3_REGION: !Ref S3REGION # Environment variable
+          S3_BUCKET: !Ref LoadTestBucket # Environment variable
+      Layers:
+        - 'arn:aws:lambda:us-east-1:764866452798:layer:chrome-aws-lambda:41' # Additional code layers
+
+  ChildLambdaFunctionAsyncConfig:
+    Type: AWS::Lambda::EventInvokeConfig # Configuration for asynchronous invocation
+    Properties:
+      FunctionName: !Ref ChildLambdaFunction # Reference to the function
+      MaximumEventAgeInSeconds: 900 # Maximum age of a message
+      MaximumRetryAttempts: 0 # Maximum number of retry attempts
+      Qualifier: $LATEST # Version or alias
+
+  LambdaPermission:
+    Type: AWS::Lambda::Permission # AWS resource type for Lambda permission
+    Properties:
+      Action: lambda:InvokeFunction # Action allowed
+      FunctionName: !Ref ChildLambdaFunction # Reference to the function
+      Principal: lambda.amazonaws.com # Service principal
+      SourceAccount: !Ref AWS::AccountId # Account ID
+
+  MasterLambdaLogGroup:
+    Type: AWS::Logs::LogGroup # AWS resource type for CloudWatch Log Group
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/new-${MasterLambdaFunction}" # Log group name
+      RetentionInDays: 14 # Log retention period
+
+  ChildLambdaLogGroup:
+    Type: AWS::Logs::LogGroup # AWS resource type for CloudWatch Log Group
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/new-${ChildLambdaFunction}" # Log group name
+      RetentionInDays: 14 # Log retention period
+
+# Additional resources like S3 buckets, triggers, and CloudWatch alarms can be added here.
+
+Outputs:
+  MasterLambdaFunctionArn:
+    Description: "ARN of the Master Lambda Function" # Description of the output
+    Value: !GetAtt MasterLambdaFunction.Arn # Output value
+
+  ChildLambdaFunctionArn:
+    Description: "ARN of the Child Lambda Function" # Description of the output
+    Value: !GetAtt ChildLambdaFunction.Arn # Output value
+
+  LoadTestBucketName:
+    Description: "Name of the S3 Bucket for Load Testing" # Description of the output
+    Value: !Ref LoadTestBucket # Output value
