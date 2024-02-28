@@ -32,8 +32,7 @@ This repository contains the source code for the Filmio Load Testing Tool, desig
 4. Install necessary Node.js and Python dependencies.
 
 ## Usage
-- Execute the `master.js` Lambda function to start the load testing process.
-- Results will be logged to the specified Google Sheet.
+https://filmio.atlassian.net/wiki/spaces/UXE/pages/2166390792/Load+Testing
 
 ## Contributing
 Contributions are welcome! Please fork the repository and submit pull requests with your enhancements.
