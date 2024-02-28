@@ -45,26 +45,36 @@ async function fullLoadTest(config) {
 
     // Iterate over the number of users and invoke separate lambda functions
     for (let a = 0; a < numberOfUsers; a++) {
+        // Shuffle projectSlugs to randomize order
+        shuffleArray(projectSlugs);
 
         // Initialize URLs array with a default '/explore' path
         let randomProjects = ['/explore'];
 
-        // Populate randomProjects array with random project URLs
-        if (numberOfRandomProjectURLs > 0) {
-            for (let a = 0; a < numberOfRandomProjectURLs; a++) {
-                randomProjects.push(projectSlugs[Math.floor(Math.random() * projectSlugs.length)]);
-            }
-            urls = randomProjects; // Assign modified URLs back to the event object
+        // Populate randomProjects array with unique random project URLs
+        if (numberOfRandomProjectURLs > 0 && projectSlugs.length >= numberOfRandomProjectURLs) {
+            randomProjects.push(...projectSlugs.slice(0, numberOfRandomProjectURLs));
+            urls = randomProjects
+        } else {
+            console.log('Using the URL list');
         }
         
-        console.log(`Invoking lambda ${index} - ${JSON.stringify(config)}`);
+        console.log(`Invoking lambda ${index} - runId: ${testId}-${a} - ${JSON.stringify(randomProjects)}`);
         await sleep(500); // Wait for 500ms between lambda invocations
 
         // Update lambda parameters with current test details
-        params.Payload = JSON.stringify({ jwt, urls, runId: `${testId}-${a}` });
+        params.Payload = JSON.stringify({ jwt, urls, runId: `${testId}-${a}`, test: testId });
         const command = new InvokeCommand(params);
         await lambda.send(command); // Send the command to invoke the lambda
         index += 1;
+    }
+}
+
+// Function to shuffle an array (Fisher-Yates shuffle algorithm)
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]]; // Swap elements
     }
 }
 
